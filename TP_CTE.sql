@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS TP_CTEs;
-USE TP_CTEs;
+CREATE DATABASE IF NOT EXISTS BdD2_TP_CTEs;
+USE BdD2_TP_CTEs;
 
 CREATE TABLE Ventas (
 	venta_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -155,6 +155,24 @@ FROM VentasPorMes
 WHERE totalVentas > 2000;
 
 -- Ejercicio 7: Usar una CTE recursiva llamada JerarquiaDepartamental para crear una lista jerárquica de departamentos de una empresa. Cada departamento tiene un jefe_id que es el responsable de un departamento superior.
+WITH RECURSIVE JerarquiaDepartamental AS (
+	-- Parte ancla: punto de inicio
+    SELECT *, 1 as valor_inicial
+    FROM Departamentos
+    WHERE jefe_id IS NULL
+    
+    UNION ALL
+    
+    -- Parte recursiva: se referencia a si misma
+    SELECT d.*, valor_inicial + 1
+    FROM Departamentos d
+    JOIN JerarquiaDepartamental jd
+		ON d.jefe_id = jd.departamento_id
+)
+SELECT
+	departamento_id AS id,
+    nombre_departamento AS nombre
+FROM JerarquiaDepartamental;
 
 -- Ejercicio 8: Crear una CTE llamada ClientesDuplicados que seleccione los clientes que tienen el mismo nombre y apellido en la tabla Clientes. Mostrar los duplicados en la consulta principal
 WITH ClientesDuplicados AS (
@@ -168,5 +186,26 @@ SELECT *
 FROM ClientesDuplicados;
 
 -- Ejercicio 9: Crear una CTE llamada TotalVentasPorCliente que calcule el total de ventas por cada cliente. Luego, usar una segunda CTE para seleccionar los clientes con un total de ventas superior a 10,000.
+WITH TotalVentasPorCliente AS (
+	WITH ventaPorCliente AS (
+		SELECT v.*, CONCAT(cl.nombre, " ", cl.apellido) AS nombre
+        FROM Ventas v
+        JOIN Clientes cl
+			ON v.cliente_id = cl.cliente_id
+    )
+    SELECT cliente_id, nombre, SUM(valor) AS totalVentas
+    FROM ventaPorCliente
+    GROUP BY cliente_id
+    HAVING totalVentas > 300
+) SELECT * FROM TotalVentasPorCliente;
 
 -- Ejercicio 10: Crear una CTE llamada VentasUltimoMes que seleccione todas las ventas del último mes (usando la función DATE_SUB() con la fecha actual) y luego unirlas con la tabla Clientes para mostrar el nombre del cliente y el valor de la venta.
+WITH VentasUltimoMes AS (
+	SELECT venta_id, fecha_venta, cliente_id
+    FROM Ventas
+    WHERE fecha_venta >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+)
+SELECT venta_id, CONCAT(nombre, " ", apellido) AS nombre, fecha_venta
+FROM VentasUltimoMes ventas
+JOIN Clientes cl
+	ON cl.cliente_id = ventas.cliente_id;
