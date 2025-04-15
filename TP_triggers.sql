@@ -121,29 +121,74 @@ VALUES (OLD.ClienteID, OLD.Nombre, OLD.Apellido, OLD.Email, OLD.Telefono, 'ELIMI
 DELETE FROM Clientes WHERE ClienteID = 4;
 
 -- Ejercicio 4: Crear un trigger para actualizar el precio total en la tabla Pedidos.
+-- Entiendo que el ejercicio requiere una columna que no se contempla en la tabla original.
+ALTER TABLE Pedidos
+ADD COLUMN PrecioTotal DECIMAL(10, 2) DEFAULT 0; -- Agrego una nueva columna PrecioTotal a la tabla de pedidos
+
+-- Cuando se inserte un nuevo registro en la tabla pedidos, se va a modificar el PrecioTotal
+DELIMITER //
+CREATE TRIGGER actualizarPrecioTotal
+AFTER INSERT ON DetallesPedido
+FOR EACH ROW
+BEGIN
+	-- Se actualiza el precio total del pedido asociado al nuevo detalle en DetallesPedido
+    UPDATE Pedidos
+    SET PrecioTotal = (
+		-- Calculo el precio total
+        SELECT SUM(dp.cantidad * p.precio)
+        FROM DetallesPedido dp
+        JOIN Productos p
+			ON dp.ProductoID = p.ProductoID
+		WHERE dp.PedidoID = NEW.PedidoID -- Solo toma los pedidos que se agrega
+    )
+    WHERE PedidoID = NEW.PedidoID; -- Actualiza solo el registro que coincide con el PedidoID que se esta ingresando
+END;
+
+// DELIMITER ;
+
+INSERT INTO DetallesPedido (DetalleID, PedidoID, ProductoID, Cantidad)
+VALUES (2007, 1001, 101, 2);
 
 -- Ejercicio 5: Crear un trigger para validar la cantidad de productos en la tabla DetallesPedido.
+DELIMITER //
+CREATE TRIGGER validarCantidadProductos
+BEFORE INSERT ON DetallesPedido
+FOR EACH ROW
+BEGIN
+	-- Los triggers no permiten transacciones
+	IF NEW.cantidad <= 0 THEN
+		SIGNAL SQLSTATE '45000' -- '45000' hace referencia a un tipo de error generico definido por el usuario
+        SET MESSAGE_TEXT = 'La cantidad de un producto debe ser mayor a 0'; -- MESSAGE_TEXT es una clausula usada dentro de un SIGNAL como un mensjae de error personalizado
+    END IF;
+END;
+// DELIMITER ;
+
+INSERT INTO DetallesPedido (DetalleID, PedidoID, ProductoID, Cantidad)
+VALUES (2007, 1001, 101, -1);
 
 -- Ejercicio 6: Crear un trigger para actualizar el precio de un producto en la tabla Productos
+DELIMITER //
+CREATE TRIGGER actualizarPrecioProducto
+BEFORE UPDATE ON Productos
+FOR EACH ROW
+BEGIN
+	-- El ejercicio no esta claro, entonces se valida que el precio del producto realmente cambie
+    IF NEW.Precio = OLD.Precio THEN
+		SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El precio del producto no cambio';
+	END IF;
+END;
+
+// DELIMITER ;
+
+UPDATE Productos SET precio = 23.33 WHERE ProductoID = 103;
 
 -- Ejercicio 7: Crear un trigger para auditar inserciones en la tabla Pedidos.
--- Por hacer: se tiene que completar el campo 'Total_Pedidos' (declarando una variable que se selecciona junto con un JOIN entre las tablas DetallePedido y Producto)
-/*
-	DECLARE total DECIMAL(10, 2);
-
-	SELECT de.cantidad * pr.precio INTO total
-    FROM DetallesPedido de
-    JOIN Productos pr
-		ON de.ProductoID = pr.ProductoID;
-        
-	INSERT INTO AuditoriaPedidos(PedidoID, FechaPedido, ClienteID, Total_Pedido, TipoOperacion)
-	VALUES (NEW.PedidoID, NEW.FechaPedido, NEW.ClienteID, total, 'INSERCION');
-*/
 CREATE TRIGGER insercionPedido
 AFTER INSERT ON Pedidos
 FOR EACH ROW
 INSERT INTO AuditoriaPedidos(PedidoID, FechaPedido, ClienteID, Total_Pedido, TipoOperacion)
-VALUES (NEW.PedidoID, NEW.FechaPedido, NEW.ClienteID, 0, 'INSERCION');
+VALUES (NEW.PedidoID, NEW.FechaPedido, NEW.ClienteID, NEW.PrecioTotal, 'INSERCION');
 
 INSERT INTO Pedidos(PedidoID, FechaPedido, ClienteID)
 VALUES (1007, '2023-10-15', 1);
@@ -153,7 +198,7 @@ CREATE TRIGGER actualizacionPedido
 AFTER UPDATE ON Pedidos
 FOR EACH ROW
 INSERT INTO AuditoriaPedidos(PedidoID, FechaPedido, ClienteID, Total_Pedido, TipoOperacion)
-VALUES (NEW.PedidoID, NEW.FechaPedido, NEW.ClienteID, 0, 'ACTUALIZACION');
+VALUES (NEW.PedidoID, NEW.FechaPedido, NEW.ClienteID, NEW.PrecioTotal, 'ACTUALIZACION');
 
 UPDATE Pedidos SET ClienteID = 3 WHERE PedidoID = 1007;
 
@@ -162,13 +207,40 @@ CREATE TRIGGER eliminacionPedido
 AFTER DELETE ON Pedidos
 FOR EACH ROW
 INSERT INTO AuditoriaPedidos(PedidoID, FechaPedido, ClienteID, Total_Pedido, TipoOperacion)
-VALUES (OLD.PedidoID, OLD.FechaPedido, OLD.ClienteID, 0, 'ELIMINACION');
+VALUES (OLD.PedidoID, OLD.FechaPedido, OLD.ClienteID, OLD.PrecioTotal, 'ELIMINACION');
 
 DELETE FROM Pedidos WHERE PedidoID IN (1005, 1006, 1007);
 
 -- Ejercicio 10: Crear un trigger para actualizar el stock de productos en la tabla Productos.
+-- Entiendo que el ejercicio requiere de una nueva columna en la tabla
+ALTER TABLE Productos
+ADD COLUMN Stock INT;
+
+CREATE TRIGGER acutalizarStockProductos
+AFTER UPDATE ON Productos
+FOR EACH ROW
+UPDATE AuditoriaProductos
+SET Stock = NEW.Stock
+WHERE ProductoID = OLD.ProductoID;
+
+UPDATE Productos SET Stock = 20, Precio = 5.99 WHERE ProductoID = 103;
 
 -- Ejercicio 11: Crear un trigger para validar el email en la tabla Clientes.
+DELIMITER //
+CREATE TRIGGER validarEmailCliente
+BEFORE INSERT ON Clientes
+FOR EACH ROW
+BEGIN
+	IF NEW.Email NOT LIKE "%@%.com" THEN
+		SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El email no cumple con el formato nombre@ejemplo.com';
+	END IF;
+END;
+
+// DELIMITER ;
+
+INSERT INTO Clientes (ClienteID, Nombre, Apellido, Email, Telefono)
+VALUES(4, 'Enzo', 'Lopez', 'enzo@gmail.com', '123-456-7890');
 
 -- Ejercicio 12: Crear un trigger para auditar inserciones en la tabla Productos.
 CREATE TRIGGER insercionProducto
@@ -199,3 +271,20 @@ VALUES (OLD.ProductoID, OLD.NombreProducto, OLD.Precio, 10, 'ELIMINACION');
 DELETE FROM Productos WHERE ProductoID = 104;
 
 -- Ejercicio 15: Crear un trigger para actualizar el stock de productos en la tabla Productos al eliminar un detalle de pedido.
+DELIMITER //
+CREATE TRIGGER actualizarStockAlEliminar
+AFTER DELETE ON DetallesPedido
+FOR EACH ROW
+BEGIN
+	UPDATE Productos
+    SET Stock = (
+		SELECT Cantidad
+        FROM DetallePedido dp
+        WHERE ProductoID = DetallesPedido.ProductoID
+    ) + Stock
+    WHERE ProductoID = OLD.ProductoID;
+END;
+
+// DELIMITER ;
+
+DELETE FROM DetallesPedido WHERE DetalleID = 2007;
